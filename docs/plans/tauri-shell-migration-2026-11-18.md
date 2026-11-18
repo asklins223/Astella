@@ -285,7 +285,7 @@ expectedDomainSchemaRevision/configRevision），启动时在 env 缺项处补�
 - `Desktop Tauri shell` 在 push 后以 `workflow_dispatch` 实跑（run 44315724812）：
   **Windows compile check ✅**（含 `cargo test --no-run --features voice-engine`），
   **Windows package ✅**（artifact `astella-tauri-windows` 99,352,579 B；解出 `2.0.6/Astella_2.0.6_x64-setup.exe`，PE32 GUI、NSIS 自解压，sha256 前缀 `846776dfe530…`）；
-  补充：与 Windows job **并行**时 macOS job 连续三次排队约 15 分钟被取消（steps 为空），改为 `only=macos` 单独运行后立即分到 runner 并全绿——推测为账户并发 macOS 排队的限制；macOS job 单独跑已完成：renderer 构建、68/9 测试、app+DMG 打包、产物上传全部成功（run 44325304139）。
+  补充：与 Windows job **并行**时 macOS job 连续三次排队约 15 分钟被取消（steps 为空），改为 `only=macos` 单独运行后立即分到 runner 并全绿——推测为账户并发 macOS 排队的限制；macOS job 单独跑已完成（run 44325304139）：renderer 构建、**68/9 测试**、app+DMG 打包、产物上传全部成功；CI 产物尺寸 **Astella.app 101.63 MiB、DMG 96.45 MiB**（均低于 150 MiB 门槛）。
 - 首跑修出的 CI 问题（均已提交）：`macos-14` 退役 → `macos-15`；sherpa 构建脚本假定
   `target/<profile>/deps|examples` 存在（mac/win 均需预建并清理 `build/sherpa-rs*` 旧缓存）；
   Windows check job 缺 renderer 产物 → 写 stub index.html；Windows 上 `npx` 是 `.cmd`
@@ -299,7 +299,7 @@ expectedDomainSchemaRevision/configRevision），启动时在 env 缺项处补�
 | 主进程能力按切片移植（窗口协议/网关身份/设备能力/自更新/发布） | ✅ macOS；🟡 Windows 编译面 | 迁移文档 35 条切片；Windows `cargo xwin check --release --all-targets --features voice-engine` 0 error |
 | macOS 先行 | ✅ | 真栈 E2E（协同/对话 SSE/记忆/工作区/认证/导出四格式/图片/bundle 导入）+ 本轮新包启动 |
 | 登录门稳定态 < 600MB | ✅ 411–454MB | 60s×12 采样，max 454MB |
-| DMG < 150MB | ✅ 99.55 MiB | 新包 `dist/2.0.6/Astella_2.0.6_aarch64.dmg`；app 104.74 MiB |
+| DMG < 150MB | ✅ 99.55 MiB（本地）/ 96.45 MiB（CI） | `dist/2.0.6/Astella_2.0.6_aarch64.dmg`；CI 产物 app 101.63 MiB |
 | 模型外置 | ✅ | 鉴权下载 + 整份校验，不入安装包 |
 | Windows 跟进 | 🟡 CI 已产包；实机未验 | 交叉 check（dev+release、含 voice-engine）；NSIS/关联/PDF/ASR 待 `windows-latest` 或真机 |
 | Electron 并行发布直到对齐 | 🟡 | Electron 仍在发；Tauri 构建工作流已备但 Actions 未跑（需 push） |
