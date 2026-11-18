@@ -55,7 +55,7 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
       - name: Build API production image
         id: api
-        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
           file: apps/api/Dockerfile
@@ -68,7 +68,7 @@ jobs:
           cache-to: type=gha,mode=max,scope=api
       - name: Build worker production image
         id: worker
-        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
           file: workers/ai-worker/Dockerfile
@@ -81,7 +81,7 @@ jobs:
           cache-to: type=gha,mode=max,scope=worker
       - name: Build TTS image
         id: edge_tts
-        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
           file: docker/edge-tts/Dockerfile
@@ -93,7 +93,7 @@ jobs:
           cache-to: type=gha,mode=max,scope=edge-tts
       - name: Build local embedding image
         id: embedding
-        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
           file: infra/embedding/Dockerfile
@@ -106,7 +106,7 @@ jobs:
 
       - name: Build standby object store from pinned upstream source
         id: backup
-        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
           file: infra/storage-backup/Dockerfile
