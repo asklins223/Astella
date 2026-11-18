@@ -227,6 +227,36 @@ jobs:
           Remove-Item Env:ASTELLA_CLIPBOARD_REHEARSAL
           Write-Host 'startup.log (after clipboard):'
           Get-Content $logPath | ForEach-Object { Write-Host "  $_" }
+          $modelDir = Join-Path $env:APPDATA 'com.astella.desktop\voice-models'
+          New-Item -ItemType Directory -Force -Path $modelDir | Out-Null
+          $modelFile = Join-Path $modelDir 'model.int8.onnx'
+          $tokensFile = Join-Path $modelDir 'tokens.txt'
+          if (-not (Test-Path $modelFile)) {
+            $tar = Join-Path $env:TEMP 'sense-voice.tar.bz2'
+            curl.exe -L --fail --silent --show-error -o $tar 'https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17.tar.bz2'
+            $modelRoot = Join-Path $env:TEMP 'astella-asr-model'
+            if (Test-Path $modelRoot) { Remove-Item $modelRoot -Recurse -Force }
+            New-Item -ItemType Directory -Force -Path $modelRoot | Out-Null
+            tar -xjf $tar -C $modelRoot
+            $src = Get-ChildItem $modelRoot -Recurse -Filter 'model.int8.onnx' | Select-Object -First 1
+            Copy-Item $src.FullName $modelFile -Force
+            $tok = Get-ChildItem $modelRoot -Recurse -Filter 'tokens.txt' | Select-Object -First 1
+            Copy-Item $tok.FullName $tokensFile -Force
+          }
+          Write-Host "ASR model bytes: $((Get-Item $modelFile).Length)"
+          $wav = Join-Path $env:TEMP 'astella-asr.wav'
+          Add-Type -AssemblyName System.Speech
+          $synth = New-Object System.Speech.Synthesis.SpeechSynthesizer
+          $fmt = New-Object System.Speech.AudioFormat.SpeechAudioFormatInfo(16000, [System.Speech.AudioFormat.AudioBitsPerSample]::Sixteen, [System.Speech.AudioFormat.AudioChannel]::Mono)
+          $synth.SetOutputToWaveFile($wav, $fmt)
+          $synth.Speak('Hello, this is Astella. Please open the notebook.')
+          $synth.Dispose()
+          $env:ASTELLA_ASR_REHEARSAL = $wav
+          $asrProc = Start-Process -FilePath $exe -PassThru -WorkingDirectory (Split-Path $exe)
+          Wait-Process -Id $asrProc.Id -Timeout 240 -ErrorAction SilentlyContinue
+          Remove-Item Env:ASTELLA_ASR_REHEARSAL
+          Write-Host 'startup.log (after ASR):'
+          Get-Content $logPath | ForEach-Object { Write-Host "  $_" }
           $uninstall = Join-Path $env:LOCALAPPDATA 'Astella\uninstall.exe'
           if (Test-Path $uninstall) { Start-Process -FilePath $uninstall -ArgumentList '/S' -Wait }
       - name: Upload artifacts

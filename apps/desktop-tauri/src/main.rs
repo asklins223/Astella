@@ -41,6 +41,59 @@ pub(crate) fn startup_log(stage: &str) {
         .and_then(|mut file| std::io::Write::write_all(&mut file, format!("{stage}\n").as_bytes()));
 }
 
+
+fn read_wav_pcm16(path: &std::path::Path) -> Result<(Vec<i16>, u32), String> {
+    let bytes = std::fs::read(path).map_err(|error| error.to_string())?;
+    if bytes.len() < 44 || &bytes[0..4] != b"RIFF" || &bytes[8..12] != b"WAVE" {
+        return Err("not a wav".into());
+    }
+    let mut offset = 12usize;
+    let mut sample_rate = 0u32;
+    let mut channels = 0u16;
+    let mut bits = 0u16;
+    while offset + 8 <= bytes.len() {
+        let id = &bytes[offset..offset + 4];
+        let size = u32::from_le_bytes(bytes[offset + 4..offset + 8].try_into().unwrap()) as usize;
+        let body = offset + 8;
+        if body + size > bytes.len() {
+            break;
+        }
+        match id {
+            b"fmt " => {
+                let format = u16::from_le_bytes(bytes[body..body + 2].try_into().unwrap());
+                channels = u16::from_le_bytes(bytes[body + 2..body + 4].try_into().unwrap());
+                sample_rate = u32::from_le_bytes(bytes[body + 4..body + 8].try_into().unwrap());
+                bits = u16::from_le_bytes(bytes[body + 14..body + 16].try_into().unwrap());
+                if format != 1 || channels != 1 || bits != 16 {
+                    return Err(format!("unsupported wav: fmt={format} ch={channels} bits={bits}"));
+                }
+            }
+            b"data" => {
+                let mut samples = Vec::with_capacity(size / 2);
+                for chunk in bytes[body..body + size].chunks_exact(2) {
+                    samples.push(i16::from_le_bytes(chunk.try_into().unwrap()));
+                }
+                return Ok((samples, sample_rate));
+            }
+            _ => {}
+        }
+        offset = body + size + (size & 1);
+    }
+    Err("wav data chunk missing".into())
+}
+
+fn asr_rehearsal(path: &str) {
+    let outcome = read_wav_pcm16(std::path::Path::new(path))
+        .and_then(|(pcm, rate)| crate::voice_engine::transcribe(&pcm, rate).map_err(|code| code.to_string()));
+    let marker = match outcome {
+        Ok(text) if text.trim().is_empty() => "empty".to_string(),
+        Ok(text) => format!("ok:{text}"),
+        Err(error) => format!("error:{error}"),
+    };
+    startup_log(&format!("asr-rehearsal:{marker}"));
+    std::process::exit(0);
+}
+
 fn main() {
     startup_log("main:enter");
     let mut builder = tauri::Builder::default();
@@ -118,6 +171,9 @@ fn main() {
                     }
                     handle.exit(0);
                 });
+            }
+            if let Ok(wav) = std::env::var("ASTELLA_ASR_REHEARSAL") {
+                asr_rehearsal(&wav);
             }
             // 剪贴板演练（仅显式设置时）：写入 HTML+文本再读回，结果写 startup.log 后退出。
             if std::env::var_os("ASTELLA_CLIPBOARD_REHEARSAL").is_some() {
