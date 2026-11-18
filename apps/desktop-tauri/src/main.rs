@@ -27,7 +27,7 @@ mod window;
 use tauri::Manager;
 
 /// 启动阶段体检（仅 ASTELLA_STARTUP_LOG=1 时启用）：写 %LOCALAPPDATA%\Astella\startup.log。
-fn startup_log(stage: &str) {
+pub(crate) fn startup_log(stage: &str) {
     if std::env::var_os("ASTELLA_STARTUP_LOG").is_none() {
         return;
     }

@@ -6,10 +6,26 @@ pub const SHIM: &str = include_str!("shim.js");
 
 /// 注入到页面脚本之前的引导脚本：合同快照 + 平台 + 桥本体。
 /// 合同必须是**真实快照**（来自部署配置），渲染层的合同门只认这一份。
+const PRELUDE: &str = r#"(() => {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID !== "function") {
+    const v4 = () => {
+      const bytes = crypto.getRandomValues(new Uint8Array(16));
+      bytes[6] = (bytes[6] & 0x0f) | 0x40;
+      bytes[8] = (bytes[8] & 0x3f) | 0x80;
+      const hex = Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
+      return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+    };
+    try { Object.defineProperty(crypto, "randomUUID", { value: v4, configurable: true }); } catch {}
+  }
+})();
+"#;
+
 pub fn boot_script(contract: &serde_json::Value) -> String {
+    // WebView2 把自定义协议视为非安全上下文（缺 randomUUID），macOS 的 WKWebView 不；平台名按目标系统对齐 Electron 的 process.platform。
+    let platform = if cfg!(target_os = "windows") { "win32" } else { "darwin" };
     format!(
-        "window.__ASTELLA_BOOT__ = {{\"contract\": {}, \"platform\": \"darwin\", \"version\": \"{}\"}};\n{}",
-        contract, env!("CARGO_PKG_VERSION"), SHIM
+        "window.__ASTELLA_BOOT__ = {{\"contract\": {}, \"platform\": \"{}\", \"version\": \"{}\"}};\n{}{}",
+        contract, platform, env!("CARGO_PKG_VERSION"), PRELUDE, SHIM
     )
 }
 
@@ -21,6 +37,7 @@ pub fn boot_script(contract: &serde_json::Value) -> String {
  */
 #[tauri::command]
 pub fn probe_report(report: String) {
+    crate::startup_log(&format!("PROBE {report}"));
     println!("PROBE {report}");
 }
 
