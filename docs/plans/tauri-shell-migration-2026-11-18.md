@@ -165,7 +165,7 @@ Electron 版并行发布兜底。macOS 已对齐；Windows 编译面已通过 MS
     `createPDFWithConfiguration:` 按 scrollHeight 出整页 PDF；隐藏窗口走
     `astella-app://artifact/<id>`（复用既有 artifact 路由）。演练：打包二进制
     `ASTELLA_PDF_REHEARSAL` 退出码 0、`%PDF-1.3`、UTI 为 com.adobe.pdf。
-    Windows 已接 WebView2 `PrintToPdf`（A4、打印背景），仅交叉编译验证，运行时待实机；其余非 mac/win 平台仍回 `unsupported_contract`。
+    Windows 已接 WebView2 `PrintToPdf`（A4、打印背景）；CI 真 Windows 冒烟用 `ASTELLA_PDF_REHEARSAL` 实测输出 `%PDF-`（18,376 B），运行时已验证；其余非 mac/win 平台仍回 `unsupported_contract`。
 35. 退登与空间列表：`auth.logout`（本机清凭据为权威、服务端吊销尽力而为、`keepQuickLogin`
    保留凭据文件并跳过吊销）、`workspace.list`（原始 `workspaceName` → 合同
    `WorkspaceSummaryV1`）；退登同时以 `watch` 通道关闭全部活协同会话（写端补 Close 帧，
@@ -345,7 +345,7 @@ Markdown AST 重写已移植（`comrak`，7 条单测）：导出图片本地化
 （rect 高度取 `document.documentElement.scrollHeight`）→ 写文件。演练钩子
 `ASTELLA_PDF_REHEARSAL=<路径>` 用打包二进制实测：退出码 0、输出 `%PDF-1.3`、
 `kMDItemContentType = com.adobe.pdf`（12KB，含中文标题与正文）。
-Windows 侧 PDF 已接（`pdf_export_windows.rs`，WebView2 `PrintToPdf`；隐藏窗口宿主与 mac 同构），实机运行时未验。
+Windows 侧 PDF 已接并在 CI 真 Windows 上实测成功（`pdf_export_windows.rs`，WebView2 `PrintToPdf`，输出 18,376 B `%PDF-`）。
 `source.bundleImport` 的**目录包与 zip 包都已通**（zip 用 `zip` crate 内存解包，同一条
 plan/import 管线；4 条单测 + 两种包 live）。
 
