@@ -302,6 +302,14 @@ expectedDomainSchemaRevision/configRevision），启动时在 env 缺项处补�
 
 发布准备（未上架）：`apps/desktop-tauri/dist/2.0.6/` 已备 `Astella_2.0.6_aarch64.dmg` 与 `Astella_2.0.6_x64-setup.exe`，附 `SHA256SUMS`（dmg `7ca25bf6…`、setup `846776df…`）；等 Owner 决定是否上架。发布助手 `scripts/publish-release.mjs`（预览默认；`--execute` 才执行；`c-v2.0.6` 已有 Electron 正式 Release，资产名 `astella-2.0.6-mac-arm64.dmg`/`astella-2.0.6-win-x64.exe`，与本端 `Astella_2.0.6_*` 不重名；向已发布 Release 追加需显式 `--allow-existing`）。Electron 打包无需模型资产（运行时下载），搬目录未影响并行发布。
 
+### 生产联调（2026-11-18 深夜，只读探针）
+
+- 正式栈（nginx + api + worker + postgres + minio + edge-tts）可达：`/health` 200。
+- `/updates/desktop/latest-mac.yml` 与 `latest.yml` 均正常，字段（version/files/url/sha512/size）与我们 `parse_manifest` 兼容。
+- **真实客户端二进制**指向生产 origin 跑 `ASTELLA_UPDATE_REHEARSAL`：`REHEARSAL check "upToDate"`——
+  自更新检查链路（Rust 客户端 → 生产清单 → 版本判定）端到端验证，无下载/安装副作用。
+- 未做任何生产写入（不建账号、不动数据）；登录态走查需 Owner 提供一个可用应用账号。
+
 ### 目标验收对照（2026-11-18 末轮审计锚点）
 
 | 目标条款 | 现状 | 证据 |
