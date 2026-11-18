@@ -167,15 +167,15 @@ jobs:
           $logPath = Join-Path $env:LOCALAPPDATA 'Astella\startup.log'
           Remove-Item $logPath -ErrorAction SilentlyContinue
           $env:ASTELLA_STARTUP_LOG = '1'
+          try { Add-MpPreference -ExclusionPath (Split-Path $exe) -ErrorAction Stop; Write-Host 'Defender exclusion added' } catch { Write-Warning "Defender exclusion failed: $_" }
           $proc = Start-Process -FilePath $exe -PassThru -WorkingDirectory (Split-Path $exe)
-          Start-Sleep -Seconds 25
+          Start-Sleep -Seconds 120
           $live = Get-Process -Id $proc.Id -ErrorAction SilentlyContinue
           if (-not $live) { throw 'app exited during startup' }
-          Start-Sleep -Seconds 55
           $live = Get-Process -Id $proc.Id -ErrorAction SilentlyContinue
           if (-not $live) { throw 'app exited during startup (second check)' }
           $ws = [math]::Round($live.WorkingSet64 / 1MB, 1)
-          Write-Host "Running: pid=$($proc.Id) session=$($live.SessionId) ws=${ws}MiB mainWindow=$($live.MainWindowHandle) title='$($live.MainWindowTitle)'"
+          Write-Host "Running: pid=$($proc.Id) session=$($live.SessionId) threads=$($live.Threads.Count) cpu=$($live.CPU) ws=${ws}MiB mainWindow=$($live.MainWindowHandle) title='$($live.MainWindowTitle)'"
           Write-Host ("PowerShell session=" + (Get-Process -Id $PID).SessionId)
           Get-ChildItem -Path (Split-Path $exe) | Select-Object -ExpandProperty Name | Out-String | Write-Host
           if (Test-Path $logPath) { Write-Host 'startup.log:'; Get-Content $logPath | ForEach-Object { Write-Host "  $_" } } else { Write-Host 'startup.log: (missing)' }
