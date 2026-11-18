@@ -299,6 +299,8 @@ expectedDomainSchemaRevision/configRevision），启动时在 env 缺项处补�
   排除 Defender（已加排除路径）。判定为托管 Windows runner 的桌面会话限制，**不能替代真机**；
   `main.rs` 保留 env 门控的 `startup_log` 便于真机定位。真机验收清单不变。
 
+发布准备（未上架）：`apps/desktop-tauri/dist/2.0.6/` 已备 `Astella_2.0.6_aarch64.dmg` 与 `Astella_2.0.6_x64-setup.exe`，附 `SHA256SUMS`（dmg `7ca25bf6…`、setup `846776df…`）；等 Owner 决定是否创建 GitHub Release。Electron 打包无需模型资产（运行时下载），搬目录未影响并行发布。
+
 ### 目标验收对照（2026-11-18 末轮审计锚点）
 
 | 目标条款 | 现状 | 证据 |
