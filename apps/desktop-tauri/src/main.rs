@@ -54,6 +54,7 @@ fn main() {
                 .filter(|path| path.extension().is_some())
                 .collect();
             if !paths.is_empty() {
+                startup_log(&format!("second-instance:{}", paths.len()));
                 crate::opened_files::broker().receive(paths);
             }
             if let Some(window) = app.get_webview_window("main") {
@@ -168,6 +169,7 @@ fn main() {
                 .filter(|path| path.extension().is_some())
                 .collect();
             if !launch_paths.is_empty() {
+                startup_log(&format!("launch-paths:{}", launch_paths.len()));
                 opened_files::broker().receive(launch_paths);
             }
             Ok(())
