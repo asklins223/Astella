@@ -285,7 +285,7 @@ expectedDomainSchemaRevision/configRevision），启动时在 env 缺项处补�
 - `Desktop Tauri shell` 在 push 后以 `workflow_dispatch` 实跑（run 44315724812）：
   **Windows compile check ✅**（含 `cargo test --no-run --features voice-engine`），
   **Windows package ✅**（artifact `astella-tauri-windows` 99,352,579 B；解出 `2.0.6/Astella_2.0.6_x64-setup.exe`，PE32 GUI、NSIS 自解压，sha256 前缀 `846776dfe530…`）；
-  macOS job 仍在公开仓库的 macOS runner 队列里等待（此前一次被排队超时取消后单独 rerun）。
+  macOS job 连续三次在排队约 15 分钟后被 GitHub 直接取消（steps 为空，未分配执行），判定为账户/区域的 macOS runner 配额或容量限制，非工作流配置问题；macOS 构建/测试/打包以本机实跑为准（同名产物与内存验收均已实测）。
 - 首跑修出的 CI 问题（均已提交）：`macos-14` 退役 → `macos-15`；sherpa 构建脚本假定
   `target/<profile>/deps|examples` 存在（mac/win 均需预建并清理 `build/sherpa-rs*` 旧缓存）；
   Windows check job 缺 renderer 产物 → 写 stub index.html；Windows 上 `npx` 是 `.cmd`
