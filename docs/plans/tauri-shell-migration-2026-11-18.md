@@ -301,7 +301,7 @@ expectedDomainSchemaRevision/configRevision），启动时在 env 缺项处补�
   同轮还验证了 Windows 单实例转发：带 `.md` 的第二个进程在转发后退出，首实例 startup.log 记录 `second-instance:1`（文件路径进入 opened_files broker）。随后又把冒烟改为**带 md 冷启动**：首实例日志出现 `launch-paths:1`，冷启动与热转发两条文件打开路径在同一轮全部实测通过。
   `main.rs` 保留 env 门控的 `startup_log` 便于真机定位。真机验收清单不变。
 
-发布准备（未上架）：`apps/desktop-tauri/dist/2.0.6/` 已备 `Astella_2.0.6_aarch64.dmg` 与 `Astella_2.0.6_x64-setup.exe`，附 `SHA256SUMS`（dmg `7ca25bf6…`、setup `846776df…`）；等 Owner 决定是否上架。发布助手 `scripts/publish-release.mjs`（预览默认；`--execute` 才执行；`c-v2.0.6` 已有 Electron 正式 Release，资产名 `astella-2.0.6-mac-arm64.dmg`/`astella-2.0.6-win-x64.exe`，与本端 `Astella_2.0.6_*` 不重名；向已发布 Release 追加需显式 `--allow-existing`）。Electron 打包无需模型资产（运行时下载），搬目录未影响并行发布。
+发布准备（未上架）：`apps/desktop-tauri/dist/2.0.6/` 已备 `Astella_2.0.6_aarch64.dmg` 与 `Astella_2.0.6_x64-setup.exe`，附 `SHA256SUMS`（dmg `7ca25bf6…`、setup `846776df…`）；**已上架（draft，2026-11-23）**：`tauri-v2.0.6` draft release 含 `Astella_2.0.6_aarch64.dmg`、`Astella_2.0.6_x64-setup.exe`（含 ASR DLL）与 `SHA256SUMS`；待 Owner 确认后手动发布。发布助手 `scripts/publish-release.mjs`（预览默认；`--execute` 才执行；`c-v2.0.6` 已有 Electron 正式 Release，资产名 `astella-2.0.6-mac-arm64.dmg`/`astella-2.0.6-win-x64.exe`，与本端 `Astella_2.0.6_*` 不重名；向已发布 Release 追加需显式 `--allow-existing`）。Electron 打包无需模型资产（运行时下载），搬目录未影响并行发布。
 
 ### 生产联调（2026-11-18 深夜，只读探针）
 
