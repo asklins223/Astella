@@ -232,16 +232,9 @@ jobs:
           $modelFile = Join-Path $modelDir 'model.int8.onnx'
           $tokensFile = Join-Path $modelDir 'tokens.txt'
           if (-not (Test-Path $modelFile)) {
-            $tar = Join-Path $env:TEMP 'sense-voice.tar.bz2'
-            curl.exe -L --fail --silent --show-error -o $tar 'https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17.tar.bz2'
-            $modelRoot = Join-Path $env:TEMP 'astella-asr-model'
-            if (Test-Path $modelRoot) { Remove-Item $modelRoot -Recurse -Force }
-            New-Item -ItemType Directory -Force -Path $modelRoot | Out-Null
-            tar -xjf $tar -C $modelRoot
-            $src = Get-ChildItem $modelRoot -Recurse -Filter 'model.int8.onnx' | Select-Object -First 1
-            Copy-Item $src.FullName $modelFile -Force
-            $tok = Get-ChildItem $modelRoot -Recurse -Filter 'tokens.txt' | Select-Object -First 1
-            Copy-Item $tok.FullName $tokensFile -Force
+            $hf = 'https://huggingface.co/csukuangfj/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17/resolve/main'
+            curl.exe -L --fail --silent --show-error -o $modelFile "$hf/model.int8.onnx"
+            curl.exe -L --fail --silent --show-error -o $tokensFile "$hf/tokens.txt"
           }
           Write-Host "ASR model bytes: $((Get-Item $modelFile).Length)"
           $wav = Join-Path $env:TEMP 'astella-asr.wav'
