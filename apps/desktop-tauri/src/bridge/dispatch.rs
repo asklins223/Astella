@@ -3735,6 +3735,32 @@ mod live_tests {
 
         std::fs::remove_dir_all(&dir).ok();
     }
+
+    /// 生产只读探针：信任握手可用，且未知账号被明确拒绝（不会创建任何数据）。
+    #[tokio::test]
+    #[ignore = "needs a remote origin and a deliberately unknown account"]
+    async fn live_login_rejects_unknown_account() {
+        let email = std::env::var("ASTELLA_LIVE_EMAIL").expect("ASTELLA_LIVE_EMAIL");
+        let password = std::env::var("ASTELLA_LIVE_PASSWORD").expect("ASTELLA_LIVE_PASSWORD");
+        let env: HashMap<String, String> = std::env::vars().collect();
+        let config = crate::gateway::config::read_configuration(&env).expect("pairing env");
+        let dir = scratch();
+        let mut gateway = Gateway::new(Ok(config), Some(FileSessionCredentialStore::new(&dir)));
+        gateway.ensure_connected().await.expect("live trust handshake + health");
+
+        let result = super::invoke(&mut gateway, &test_models(), None, "astella.v1.auth.login", &json!({
+            "meta": json!({ "requestId": "live-reject", "correlationId": "live-reject" }),
+            "email": email,
+            "password": password,
+            "remember": true,
+        })).await;
+        eprintln!("login rejection: {result}");
+        assert_eq!(result["ok"], false, "{result}");
+        assert_eq!(result["error"]["code"], "invalid_credentials", "{result}");
+        assert!(!dir.join("session-credential-tauri-v1.txt").exists());
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
 }
 
 /// 模型分发联调（默认忽略）：需要本地 API + MinIO 且模型已入库。

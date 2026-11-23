@@ -309,7 +309,8 @@ expectedDomainSchemaRevision/configRevision），启动时在 env 缺项处补�
 - `/updates/desktop/latest-mac.yml` 与 `latest.yml` 均正常，字段（version/files/url/sha512/size）与我们 `parse_manifest` 兼容。
 - **真实客户端二进制**指向生产 origin 跑 `ASTELLA_UPDATE_REHEARSAL`：`REHEARSAL check "upToDate"`——
   自更新检查链路（Rust 客户端 → 生产清单 → 版本判定）端到端验证，无下载/安装副作用。
-- 未做任何生产写入（不建账号、不动数据）；登录态走查需 Owner 提供一个可用应用账号。
+- 新增只读探针 `live_login_rejects_unknown_account`：对生产完成信任握手并以未知账号登录，
+  得到 `invalid_credentials` 且无凭据落盘（未创建任何数据）。成功登录走查仍待 Owner 提供测试账号。
 
 ### 目标验收对照（2026-11-18 末轮审计锚点）
 
