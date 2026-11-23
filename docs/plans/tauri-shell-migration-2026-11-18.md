@@ -297,6 +297,7 @@ expectedDomainSchemaRevision/configRevision），启动时在 env 缺项处补�
   进程可启动并存活，但 120s 后仍无窗口、无 WebView2 子进程、CPU=0、线程=2，
   且 `main()` 首行的 startup.log（`ASTELLA_STARTUP_LOG=1`）都未产生——卡在 Rust 入口之前，
   排除 Defender（已加排除路径）。**根因已找到（2026-11-18 深夜）**：voice-engine 构建让 exe 导入 `sherpa-onnx-c-api.dll`，但 NSIS 包未带任何 sherpa DLL（解包校验：只有 exe、make_patch.exe、uninstall 与 NSIS 插件），加载期即失败、main 不执行。处置：Windows 包**暂时不带 voice-engine**（ASR 仍由 check job 的 feature 编译覆盖），先拿到可运行安装包；后续把 sherpa 运行时 DLL 打进安装包再恢复 ASR。另发现 `make_patch.exe` 被顺带打包，后续用 `--bins` 裁剪。此前判定“托管会话限制”作废。**复跑结果（run 44351253819）**：去除 voice-engine 后 Windows 包在 CI 上完整启动——startup.log 记录 `main:enter → setup:enter → voice-models → gateway → window → window-ready`，`msedgewebview2` 子进程正常拉起；进程状态 `session=2 threads=12 ws=31.5MiB mainWindow=262498 title='拾星笔记'`，并成功截屏——安装→启动→窗口呈现链路在真实 Windows 上首次跑通。首次截图暴露 WebView2 安全上下文缺口：`crypto.randomUUID` 缺失导致书房报错；已在启动注入脚本加 v4 polyfill（并把 `platform` 修正为 `win32`）。修复后截图显示完整产品 UI（CI 无后端，呈现「服务暂时不可用/再试一次」是预期的真实状态）。**ASR 已恢复（2026-11-18 深夜）**：`tauri.windows.conf.json` 把 `sherpa-runtime/*.dll` 平铺到安装根目录，打包脚本在 Windows+voice-engine 时从 `target/release/deps` 收集 5 个 DLL；带 ASR 的 NSIS 包（artifact ≈100.2 MiB）静默安装→启动冒烟全绿（窗口「拾星笔记」、WebView2 正常）。check job 用占位 DLL 满足资源 glob。
+  ASR 识别实测：`ASTELLA_ASR_REHEARSAL` 用 SenseVoice（239,233,841 B）+ Windows 合成 WAV，输出 `asr-rehearsal:ok:Hello, this is Esella, please open the notebook.`。
   同轮还验证了 Windows 单实例转发：带 `.md` 的第二个进程在转发后退出，首实例 startup.log 记录 `second-instance:1`（文件路径进入 opened_files broker）。随后又把冒烟改为**带 md 冷启动**：首实例日志出现 `launch-paths:1`，冷启动与热转发两条文件打开路径在同一轮全部实测通过。
   `main.rs` 保留 env 门控的 `startup_log` 便于真机定位。真机验收清单不变。
 
@@ -320,7 +321,7 @@ expectedDomainSchemaRevision/configRevision），启动时在 env 缺项处补�
 | 登录门稳定态 < 600MB | ✅ 411–454MB | 60s×12 采样，max 454MB |
 | DMG < 150MB | ✅ 99.55 MiB（本地）/ 96.45 MiB（CI） | `dist/2.0.6/Astella_2.0.6_aarch64.dmg`；CI 产物 app 101.63 MiB |
 | 模型外置 | ✅ | 鉴权下载 + 整份校验，不入安装包 |
-| Windows 跟进 | 🟡 CI 端到端已通；待人工交互 | 交叉 check（dev+release、含 voice-engine 0 error）；NSIS（含 ASR DLL）静默安装→启动→窗口渲染→截图；冷启动/热转发文件打开、PDF `%PDF-`、剪贴板读写均实测；剩余：连后端真人走查（登录/ASR 识别）与资产上架 |
+| Windows 跟进 | 🟡 CI 端到端已通；待人工交互 | 交叉 check（dev+release、含 voice-engine 0 error）；NSIS（含 ASR DLL）静默安装→启动→窗口渲染→截图；冷启动/热转发文件打开、PDF `%PDF-`、剪贴板读写均实测；ASR 识别已实测（合成语音整句正确）；剩余：连后端真人走查（登录）与资产上架 |
 | Electron 并行发布直到对齐 | 🟡 | Electron 仍在发；Tauri Actions 已实跑并全绿（mac 构建/测试/打包、win check/NSIS+ASR 包/冒烟） |
 | 发布链（补丁） | 🟡 本地链路齐 | 平台标记命名 + `make_patch --verify` 对真实二进制通过；补丁与当版 Tauri 二进制资产未上传 Release。清单由 Electron 发布链产出（服务端改写 url），Tauri 不发布清单 |
 | 验收：登录门内存 <600MB | ✅ | 2026-11-18 末复测 **540MB**（主进程 132 + WebKit 408），当前打包产物 |
