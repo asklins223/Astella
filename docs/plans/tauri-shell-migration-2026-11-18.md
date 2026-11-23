@@ -311,6 +311,8 @@ expectedDomainSchemaRevision/configRevision），启动时在 env 缺项处补�
   自更新检查链路（Rust 客户端 → 生产清单 → 版本判定）端到端验证，无下载/安装副作用。
 - 新增只读探针 `live_login_rejects_unknown_account`：对生产完成信任握手并以未知账号登录，
   得到 `invalid_credentials` 且无凭据落盘（未创建任何数据）。成功登录走查仍待 Owner 提供测试账号。
+- 打包 app 以生产 origin 启动并截屏：登录门完整渲染（PROBE：canvas/WebGL2/fonts 正常），
+  右下角「检查更新 · 已是最新」—同一次启动里 UI 更新检查也打到生产并返回最新。
 - 仓库正规闸 `make verify` 在 Tauri 提交后整体通过（exit 0）：shared/agents/ai-quality/api/desktop-client/worker
   全部类型检查与测试绿，其中单个套件 2052 passed / 0 failed。
 
