@@ -316,6 +316,18 @@ expectedDomainSchemaRevision/configRevision），启动时在 env 缺项处补�
 - 仓库正规闸 `make verify` 在 Tauri 提交后整体通过（exit 0）：shared/agents/ai-quality/api/desktop-client/worker
   全部类型检查与测试绿，其中单个套件 2052 passed / 0 failed。
 
+### 收尾清单（只差 Owner 输入，2026-11-25）
+
+1. **生产登录走查**（需一个可用应用账号）：收到邮箱+密码后运行
+   `DESKTOP_API_ORIGIN=https://103.106.191.159 ASTELLA_DOMAIN_SCHEMA_REVISION=domain-dev-v1 \
+    ASTELLA_LIVE_EMAIL=… ASTELLA_LIVE_PASSWORD=… RUST_MIN_STACK=67108864 \
+    cargo test live_trust_login_against_local_api -- --ignored --nocapture`
+   ——预期 `authenticated`、会话落盘、重启后 `getState` 仍为已登录；随后用同一账号做 UI 登录截图。
+2. **发布**：GitHub Release `tauri-v2.0.6`（draft）过目后点 Publish；资产已回读校验。
+3. **补丁资产**：等下一版发布时，用 `make_patch`（平台标记命名）与当版 Tauri 二进制一起挂到对应 tag；当前版本无补丁可发，不阻塞验收。
+
+除以上三点外，目标条款均已有本地/CI/生产只读证据，见下表。
+
 ### 目标验收对照（2026-11-18 末轮审计锚点）
 
 | 目标条款 | 现状 | 证据 |
